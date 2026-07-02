@@ -79,6 +79,14 @@
         <h1>Step 1: Upload & Draft</h1>
         <p class="subtitle">Upload student roster to generate Provisional Drafts for student review.</p>
         
+        <!-- NEW: Email Configuration for College Admins -->
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <h3 style="margin-top: 0; font-size: 16px; color: #1e40af;">College Email Configuration</h3>
+            <p style="font-size: 13px; color: #3b82f6; margin-bottom: 15px;">To send emails automatically, provide the college's official email and 16-letter App Password. <i>(Processed securely on your local computer).</i></p>
+            <input type="email" id="admin-email" placeholder="e.g. admin@college.edu.in" style="width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px;">
+            <input type="password" id="admin-password" placeholder="16-letter Google App Password" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px;">
+        </div>
+
         <div class="drop-zone" id="drop-zone" onclick="document.getElementById('excel-file').click()">
             <span class="drop-zone-icon">📄</span>
             <p class="drop-zone-text">Click or Drag & Drop Roster Here</p>
@@ -174,12 +182,23 @@
     fileInput.addEventListener('change', async function(event) {
         if (!event.target.files[0] || !isLocalServerRunning) return;
         
+        const adminEmail = document.getElementById('admin-email').value;
+        const adminPassword = document.getElementById('admin-password').value;
+
+        if (!adminEmail || !adminPassword) {
+            alert("Please enter the College Email and App Password before uploading the roster.");
+            fileInput.value = ""; // Reset file input
+            return;
+        }
+
         const statusArea = document.getElementById('status-area');
         statusArea.innerText = "Sending file securely to Local Server...";
         statusArea.style.color = "#2563eb";
 
         const formData = new FormData();
         formData.append('roster', event.target.files[0]);
+        formData.append('senderEmail', adminEmail);
+        formData.append('senderPassword', adminPassword);
 
         try {
             // Sends the file straight to localhost:3000
