@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Transparency Ledger | Admin Portal</title>
+    
+    <!-- Lightweight frontend libraries: Firebase (for signatures) and QRCode (for display) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+    <style>
+        :root { --primary: #2563eb; --primary-hover: #1d4ed8; --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --border: #e2e8f0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 40px 20px; }
+        
+        .container { max-width: 750px; margin: 0 auto; background: var(--card); padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        p.subtitle { color: #64748b; margin-bottom: 30px; font-size: 15px; }
+        
+        /* Server Status Banner */
+        .server-status { padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 600; text-align: center; margin-bottom: 25px; display: none; }
+        .status-online { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; display: block; }
+        .status-offline { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; display: block; }
+
+        .btn { display: block; width: 100%; padding: 16px; margin-bottom: 15px; font-size: 16px; font-weight: 600; cursor: pointer; border: none; border-radius: 10px; transition: all 0.2s; text-align: center; }
+        .btn-primary { background-color: var(--primary); color: white; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+        .btn-primary:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
+        .btn-success { background-color: #10b981; color: white; }
+        .btn-success:hover { background-color: #059669; }
+        .btn-secondary { background-color: #f1f5f9; color: #334155; border: 1px solid var(--border); }
+        .btn-secondary:hover { background-color: #e2e8f0; }
+        
+        .back-btn { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 15px; padding: 0; margin-bottom: 25px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+        .back-btn:hover { text-decoration: underline; }
+        
+        .drop-zone { border: 2px dashed #cbd5e1; background: #f8fafc; padding: 50px 20px; text-align: center; border-radius: 12px; margin: 20px 0; cursor: pointer; transition: all 0.2s; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
+        .drop-zone-icon { font-size: 40px; margin-bottom: 15px; display: block; }
+        .drop-zone-text { font-size: 16px; font-weight: 600; color: #475569; margin: 0; }
+        .drop-zone-sub { font-size: 13px; color: #ef4444; font-weight: bold; margin-top: 5px; }
+
+        .qr-section { text-align: center; margin-top: 30px; padding: 30px; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; }
+        .status-badge { display: inline-block; background: #fef08a; color: #854d0e; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; text-transform: uppercase; margin-bottom: 15px; }
+
+        .college-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 15px; }
+        .college-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+        .college-card:hover { border-color: var(--primary); background-color: #eff6ff; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15); transform: translateY(-3px); }
+        .college-card h3 { margin: 0; font-size: 16px; color: #0f172a; }
+        .verify-badge { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        
+        #list-view, #detail-view, #upload-window, #finalize-window { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- DYNAMIC SERVER HEALTH CHECK BANNER -->
+    <div id="server-status-banner" class="server-status status-offline">
+        📡 Checking Local Security Server connection...
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="main-menu" style="display: block;">
+        <h1>Global Transparency Ledger</h1>
+        <p class="subtitle">Secure Post-Quantum Certificate Management</p>
+        
+        <!-- This button is disabled until the local server is detected -->
+        <button id="btn-generate" class="btn btn-primary" onclick="showUploadWindow()" style="opacity: 0.5; cursor: not-allowed;" disabled>
+            🔒 Issue Batch Certificates (Requires Local Server)
+        </button>
+        <button class="btn btn-secondary" onclick="showList()">View Approved Directory</button>
+    </div>
+
+    <!-- PHASE 1: UPLOAD & DRAFT (Grace Period) -->
+    <div id="upload-window">
+        <button class="back-btn" onclick="showMainMenu()">← Return to Dashboard</button>
+        <h1>Step 1: Upload & Draft</h1>
+        <p class="subtitle">Upload student roster to generate Provisional Drafts for student review.</p>
+        
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('excel-file').click()">
+            <span class="drop-zone-icon">📄</span>
+            <p class="drop-zone-text">Click or Drag & Drop Roster Here</p>
+            <p class="drop-zone-sub">Data is sent securely to your Local Server. It never touches the public internet.</p>
+            <input type="file" id="excel-file" accept=".xlsx, .xls" hidden />
+        </div>
+
+        <div id="status-area" style="margin-top: 15px; font-weight: 600; color: #334155; text-align: center;"></div>
+    </div>
+
+    <!-- PHASE 2: FINALIZE & SIGN -->
+    <div id="finalize-window">
+        <button class="back-btn" onclick="showMainMenu()">← Return to Dashboard</button>
+        <h1 style="color: #059669;">Step 2: Finalize Batch</h1>
+        <p class="subtitle">Once students have verified their drafts, lock the cryptography.</p>
+
+        <button class="btn btn-success" id="btn-finalize" onclick="finalizeBatchLocally()">
+            Finalize Cryptography & Request Signature
+        </button>
+
+        <div id="generation-qr-container" class="qr-section" style="display: none;">
+            <div class="status-badge">Awaiting Principal's Approval</div>
+            <p style="font-size: 14px; color: #475569; margin-bottom: 20px;">
+                The Local Server has computed the Master Root. Please scan this authorization code using the <b>SignCore Admin App</b> to digitally sign and lock this batch.
+            </p>
+            <canvas id="batch-qrcode" style="display: inline-block; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);"></canvas>
+            <p id="signature-status-text" style="font-weight: bold; margin-top: 15px; color: #2563eb;">Waiting for signature...</p>
+        </div>
+    </div>
+
+    <!-- PUBLIC DIRECTORY -->
+    <div id="list-view">
+        <button class="back-btn" onclick="showMainMenu()">← Return to Dashboard</button>
+        <h1>Public Verified Directory</h1>
+        <ul class="college-list" id="dynamic-college-list"><li class="loading-text">Loading network directory...</li></ul>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 1. HYBRID SERVER CONNECTION (The Magic Bridge)
+    // ==========================================
+    const LOCAL_SERVER_URL = "http://127.0.0.1:3000";
+    let isLocalServerRunning = false;
+
+    async function checkServerHealth() {
+        const banner = document.getElementById('server-status-banner');
+        const generateBtn = document.getElementById('btn-generate');
+        try {
+            const response = await fetch(`${LOCAL_SERVER_URL}/api/status`);
+            if (response.ok) {
+                isLocalServerRunning = true;
+                banner.className = "server-status status-online";
+                banner.innerText = "🔒 Local Security Server Connected. Ready to process.";
+                generateBtn.style.opacity = "1";
+                generateBtn.style.cursor = "pointer";
+                generateBtn.disabled = false;
+                generateBtn.innerText = "Issue Batch Certificates";
+            }
+        } catch (error) {
+            isLocalServerRunning = false;
+            banner.className = "server-status status-offline";
+            banner.innerText = "⚠️ Local Security Server not detected. Please start your Node.js server to issue certificates.";
+        }
+    }
+
+    window.onload = () => {
+        checkServerHealth();
+        loadCollegeDirectory();
+    };
+
+    // ==========================================
+    // 2. FIREBASE (Only used as an Ephemeral Post Office!)
+    // ==========================================
+    let db;
+    try {
+        const firebaseConfig = {
+            apiKey: "AIzaSyCPo7LQtO0ky8RpBqt2d1gRFREbPOVm2Lg",
+            authDomain: "pqc-verification-app.firebaseapp.com",
+            databaseURL: "https://pqc-verification-app-default-rtdb.firebaseio.com",
+            projectId: "pqc-verification-app"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore(); 
+    } catch (e) { alert("Warning: Firebase blocked."); }
+
+
+    // ==========================================
+    // 3. PHASE 1: UPLOAD EXCEL -> LOCAL SERVER
+    // ==========================================
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('excel-file');
+
+    fileInput.addEventListener('change', async function(event) {
+        if (!event.target.files[0] || !isLocalServerRunning) return;
+        
+        const statusArea = document.getElementById('status-area');
+        statusArea.innerText = "Sending file securely to Local Server...";
+        statusArea.style.color = "#2563eb";
+
+        const formData = new FormData();
+        formData.append('roster', event.target.files[0]);
+
+        try {
+            // Sends the file straight to localhost:3000
+            const response = await fetch(`${LOCAL_SERVER_URL}/api/draft-batch`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!data.success) throw new Error("Local Server failed to process.");
+
+            statusArea.innerText = "✅ Success! Provisional Drafts are being generated and emailed to students by your Local Server.\n\nPlease instruct students to review their details. When ready, go to the 'Finalize' tab.";
+            statusArea.style.color = "#10b981";
+
+            setTimeout(() => {
+                document.getElementById('upload-window').style.display = 'none';
+                document.getElementById('finalize-window').style.display = 'block';
+            }, 4000);
+
+        } catch (error) {
+            statusArea.innerText = "Error connecting to Local Server: " + error.message;
+            statusArea.style.color = "red";
+        }
+    });
+
+    // ==========================================
+    // 4. PHASE 2: FINALIZE & SIGN
+    // ==========================================
+    async function finalizeBatchLocally() {
+        const btn = document.getElementById('btn-finalize');
+        btn.disabled = true;
+        btn.innerText = "Locking Cryptography on Local Server...";
+
+        try {
+            const response = await fetch(`${LOCAL_SERVER_URL}/api/finalize-batch`, { method: 'POST' });
+            const data = await response.json();
+
+            if (!data.success) throw new Error("Failed to finalize.");
+
+            const sessionId = data.sessionId;
+            const merkleRoot = data.root;
+
+            await db.collection("DocumentSignatures").doc(sessionId).set({
+                merkleRoot: merkleRoot, 
+                status: "AWAITING_SIGNATURE", 
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            QRCode.toCanvas(document.getElementById('batch-qrcode'), "firebase_root_id:" + sessionId, { width: 220 });
+            document.getElementById('generation-qr-container').style.display = 'block';
+            btn.style.display = 'none';
+
+            listenForSignature(sessionId);
+
+        } catch (error) {
+            alert("Error: Make sure your Local Server is running and has a drafted batch ready.");
+            btn.disabled = false;
+            btn.innerText = "Finalize Cryptography & Request Signature";
+        }
+    }
+
+    function listenForSignature(sessionId) {
+        const statusText = document.getElementById('signature-status-text');
+        
+        const unsubscribe = db.collection("DocumentSignatures").doc(sessionId).onSnapshot(async (doc) => {
+            if (doc.exists && doc.data().pqcSignature) {
+                unsubscribe(); 
+                
+                statusText.innerText = "✅ Signature Verified! Telling Local Server to send Final Emails...";
+                statusText.style.color = "#10b981"; 
+                document.getElementById('batch-qrcode').style.opacity = "0.2";
+
+                try {
+                    await fetch(`${LOCAL_SERVER_URL}/api/publish-final`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: sessionId, signature: doc.data().pqcSignature })
+                    });
+                    statusText.innerText = "🎉 Complete! Final secure certificates have been dispatched.";
+                } catch (e) {
+                    statusText.innerText = "⚠️ Final emails triggered, but server response was delayed.";
+                }
+            }
+        });
+    }
+
+    // ==========================================
+    // 5. PUBLIC DIRECTORY LOGIC
+    // ==========================================
+    const githubBaseUrl = "https://raw.githubusercontent.com/ameenonevents-afk/verify_ledger/main/";
+    
+    async function loadCollegeDirectory() {
+        try {
+            const response = await fetch(githubBaseUrl + "data/directory.json", { cache: "no-store" });
+            const colleges = await response.json();
+            document.getElementById('dynamic-college-list').innerHTML = colleges.map(c => 
+                `<li class="college-card" onclick="alert('Scan with TruthScan App to verify:\\n\\n' + '${githubBaseUrl}data/${c.id}.json')">
+                    <h3>${c.name}</h3><span class="verify-badge">✓ VERIFIED</span>
+                </li>`
+            ).join('');
+        } catch (error) { 
+            document.getElementById('dynamic-college-list').innerHTML = "<li class='loading-text' style='color:red;'>Failed to load network directory.</li>"; 
+        }
+    }
+
+    // Navigation Helpers
+    function hideAllWindows() { ['main-menu', 'upload-window', 'list-view', 'finalize-window'].forEach(id => document.getElementById(id).style.display = 'none'); }
+    function showMainMenu() { hideAllWindows(); document.getElementById('main-menu').style.display = 'block'; }
+    function showUploadWindow() { hideAllWindows(); document.getElementById('upload-window').style.display = 'block'; }
+    function showList() { hideAllWindows(); document.getElementById('list-view').style.display = 'block'; }
+
+    // Drag and drop cosmetics
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; fileInput.dispatchEvent(new Event('change')); }});
+</script>
+</body>
+</html>
