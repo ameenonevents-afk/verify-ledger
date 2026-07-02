@@ -165,7 +165,6 @@
         db = firebase.firestore(); 
     } catch (e) { alert("Warning: Firebase blocked."); }
 
-
     // ==========================================
     // 3. PHASE 1: UPLOAD EXCEL -> LOCAL SERVER
     // ==========================================
@@ -190,7 +189,13 @@
             });
 
             const data = await response.json();
-            if (!data.success) throw new Error("Local Server failed to process.");
+            
+            // NEW FIX: Email Validation Guard
+            if (!data.success) {
+                statusArea.innerText = "⚠️ " + data.error;
+                statusArea.style.color = "red";
+                return; 
+            }
 
             statusArea.innerText = "✅ Success! Provisional Drafts are being generated and emailed to students by your Local Server.\n\nPlease instruct students to review their details. When ready, go to the 'Finalize' tab.";
             statusArea.style.color = "#10b981";
@@ -210,6 +215,11 @@
     // 4. PHASE 2: FINALIZE & SIGN
     // ==========================================
     async function finalizeBatchLocally() {
+        // NEW FIX: Grace Period popup protection
+        if (!confirm("⚠️ GRACE PERIOD WARNING ⚠️\n\nHave you given students enough time to verify their drafts? \n\nClicking 'OK' will compute the Master Root and permanently lock this batch.")) {
+            return;
+        }
+
         const btn = document.getElementById('btn-finalize');
         btn.disabled = true;
         btn.innerText = "Locking Cryptography on Local Server...";
@@ -259,7 +269,9 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: sessionId, signature: doc.data().pqcSignature })
                     });
-                    statusText.innerText = "🎉 Complete! Final secure certificates have been dispatched.";
+                    
+                    // NEW FIX: Explaining to the user that PDFs are saved on their hard drive
+                    statusText.innerHTML = "🎉 Complete! Final secure certificates have been dispatched.<br><br><b>A backup folder containing all final PDFs has been saved directly to your Local Server folder!</b>";
                 } catch (e) {
                     statusText.innerText = "⚠️ Final emails triggered, but server response was delayed.";
                 }
